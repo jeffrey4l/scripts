@@ -9,6 +9,7 @@ import re
 import sys
 import logging
 import pdb
+import json
 RENREN_LOGIN_URL="http://www.renren.com/Login.do"
 RENREN_UPDATE_URL="http://status.renren.com/doing/update.do"
 RENREN_LEAVE_URL="http://gossip.renren.com/gossip.do"
@@ -43,18 +44,11 @@ class Renren(object):
         """"""
         data = urllib.urlencode({"email":self.email,"password":self.password})
         ret = self.opener.open(RENREN_LOGIN_URL,data)
-        content = ret.readlines()
-        for line in content:
-            _id = self.id_pattern.findall(line)
-            _token = self.token_pattern.findall(line)
-
-            if not getattr(self,"token",False) and _token is not None and len(_token) > 0:
-                self.token = _token[0]
-                logging.debug("Get token key %s",self.token)
-
-            if not getattr(self,"id",False) and _id is not None  and len(_id) > 0:
-                self.id = _id[0]
-                logging.debug("Get user id: %s",self.id)
+        content = ret.read()
+        self.id = self.id_pattern.findall(content)[0]
+        logging.debug("Get id: %s",self.id)
+        self.token = self.token_pattern.findall(content)[0]
+        logging.debug("Get token: %s",self.token)
 
     @log
     def send_status(self,msg):
@@ -87,49 +81,51 @@ class Renren(object):
             logging.debug("Try open url: %s",url)
             profile = self.opener.open(RENREN_PROFILE_URL % (id,))
             logging.debug("Get the url content")
-            content = profile.readlines()
-            contents = "".join(content)
+            content = profile.read()
             ak_pattern = re.compile(r"name=\"ak\" value=\"(\w+)")
             profilever_pattern = re.compile(r"name=\"profilever\" id=\"profilever\" value=\"(\w+)\"")
-            self.ak = ak_pattern.findall("".join(content))
-            self.profilever = profilever_pattern.findall("".join(content))
+
+            self.ak = ak_pattern.findall(content)[0]
             logging.debug("Find ak value:%s",self.ak)
+            self.profilever = profilever_pattern.findall(content)[0]
             logging.debug("Find profilever value:%s",self.profilever)
 
         message={
                 "body":message,
-                "curpage":"",
-                "from":"main",
                 "id":id,
                 "cc":id,
-                "ak":self.ak,
-                "cccc":"",
-                "tsc":"",
-                "profilever":self.profilever,
                 "headUrl":"",
                 "largeUrl":"",
                 "requestToken":self.token,
+                "requestToken":self.token,
                 "only_to_me":0,
                 "color":"",
-                "ref":"http://www.renren.com/profile.do",
+                "ref":"http://www.renren.com/getgossiplist.do",
                 "mode":"",
                 }
+        logging.debug("sending leave message: %s",message)
         data = urllib.urlencode(message)
         logging.debug("encoded leave message: %s",data)
         ret = self.opener.open(RENREN_LEAVE_URL,data)
+
+        msg = json.JSONDecoder().decode(ret.read())
+        if 0 == msg['code']:
+            logging.debug("Send to %s successfully" % (id,))
+        else:
+            logging.debug("send to %s failed. error code: %s , error message: %s" % (id, msg['code'],msg['msg']))
+
     @log
     def get_myfriends(self):
         logging.debug("Try to open url:%s",RENREN_MYFRIEND_URL)
         ret = self.opener.open(RENREN_MYFRIEND_URL)
-        contents = "".join(ret.readlines())
+        content = ret.read()
         friends_pattern = re.compile(r'var friends=(.*);')
-
-        friends = eval(friends_pattern.findall(contents)[0].replace("false","False").replace("true","True").replace("\"name\":","\"name\":u"))
+        friends = json.JSONDecoder().decode(friends_pattern.findall(content)[0])
         return friends
 
 if __name__ == "__main__":
     reload(sys)
-    sys.setdefaultencoding("utf-8")
+    sys.setdefaultencoding("cp936")
     logging.basicConfig(level=logging.DEBUG)
 
     EMAIL=""
@@ -137,11 +133,11 @@ if __name__ == "__main__":
     rr = Renren(EMAIL,PASSWORD)
     rr.login()
     friends = rr.get_myfriends()
-    i = 0
-    for friend in friends[36:]:
+    i = 1
+    for friend in friends[i:]:
         i +=1
         logging.debug("sending message to %s (%d/%d)" % (friend['name'],i,len(friends)))
-        rr.leave_message(friend["id"],"%s,祝你感恩节快乐！" % (friend['name'],))
+        rr.leave_message(friend["id"],"1")
     #rr.leave_message("249285424","测试")
 
     #for arg in sys.argv[1:]:
