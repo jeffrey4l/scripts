@@ -10,6 +10,11 @@ import sys
 import logging
 import pdb
 import json
+import ConfigParser
+import io
+import threading
+import time
+import random
 RENREN_LOGIN_URL="http://www.renren.com/Login.do"
 RENREN_UPDATE_URL="http://status.renren.com/doing/update.do"
 RENREN_LEAVE_URL="http://gossip.renren.com/gossip.do"
@@ -24,7 +29,18 @@ def log(func):
         if ret:
             return ret
     return wrapper
-         
+
+def new_thread(func):
+    def _(*args,**kwargs):
+        logging.debug("new threading")
+        new_thread = threading.Thread(target=func,args = args,kwargs = kwargs)
+        new_thread.start()
+        time.sleep(2)
+        logging.debug("The thread: %s is running" % (new_thread,))
+    return _
+
+
+
 
 class Renren(object):
 
@@ -52,11 +68,6 @@ class Renren(object):
 
     @log
     def send_status(self,msg):
-        try:
-             getattr(self,"token") 
-        except:
-            self.login()
-
         status={
                 "c":msg,
                 "isAtHome":"1",
@@ -68,28 +79,6 @@ class Renren(object):
 
     @log
     def leave_message(self,id,message):
-        try:
-            getattr(self,'token')
-        except:
-            self.login()
-        try:
-            getattr(self,'ak')
-            logging.debug("Parameters for leave message exist")
-        except:
-            logging.debug("Try to get param used in leave message")
-            url = RENREN_PROFILE_URL % (id,)
-            logging.debug("Try open url: %s",url)
-            profile = self.opener.open(RENREN_PROFILE_URL % (id,))
-            logging.debug("Get the url content")
-            content = profile.read()
-            ak_pattern = re.compile(r"name=\"ak\" value=\"(\w+)")
-            profilever_pattern = re.compile(r"name=\"profilever\" id=\"profilever\" value=\"(\w+)\"")
-
-            self.ak = ak_pattern.findall(content)[0]
-            logging.debug("Find ak value:%s",self.ak)
-            self.profilever = profilever_pattern.findall(content)[0]
-            logging.debug("Find profilever value:%s",self.profilever)
-
         message={
                 "body":message,
                 "id":id,
@@ -103,7 +92,6 @@ class Renren(object):
                 "ref":"http://www.renren.com/getgossiplist.do",
                 "mode":"",
                 }
-        logging.debug("sending leave message: %s",message)
         data = urllib.urlencode(message)
         logging.debug("encoded leave message: %s",data)
         ret = self.opener.open(RENREN_LEAVE_URL,data)
@@ -123,22 +111,30 @@ class Renren(object):
         friends = json.JSONDecoder().decode(friends_pattern.findall(content)[0])
         return friends
 
+def main():
+    config = ConfigParser.ConfigParser()
+    try:
+        config.read('setting.conf')
+        EMAIL=config.get('default','username')
+        PASSWORD=config.get('default','password')
+    except:
+        EMAIL=""
+        PASSWORD=""
+    rr = Renren(EMAIL,PASSWORD)
+    rr.login()
+    friends = rr.get_myfriends()
+    cur = 0
+    for friend in friends[cur:]:
+        cur +=1
+        logging.debug("sending message to %s (%d/%d)" % (friend['name'],cur,len(friends)))
+        rr.leave_message(friend["id"],"Test %d" % (cur,))
+
 if __name__ == "__main__":
     reload(sys)
     sys.setdefaultencoding("cp936")
     logging.basicConfig(level=logging.DEBUG)
 
-    EMAIL=""
-    PASSWORD=""
-    rr = Renren(EMAIL,PASSWORD)
-    rr.login()
-    friends = rr.get_myfriends()
-    i = 1
-    for friend in friends[i:]:
-        i +=1
-        logging.debug("sending message to %s (%d/%d)" % (friend['name'],i,len(friends)))
-        rr.leave_message(friend["id"],"1")
-    #rr.leave_message("249285424","测试")
+    main()
+    #a = Test()
+    #[a.test(i) for i in range(10)]
 
-    #for arg in sys.argv[1:]:
-        #print rr.send_status(arg)
